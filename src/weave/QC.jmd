@@ -1,0 +1,36 @@
+# Pre-alignment statistics #
+
+```{julia;echo=false}
+import Weave
+Weave.set_chunk_defaults(Dict{Symbol, Any}(
+    :echo => false
+))
+```
+
+```julia
+using Plots
+using StatPlots
+plotly();
+results = WEAVE_ARGS[:results]
+poly = WEAVE_ARGS[:poly]
+```
+
+#### Number of reads ####
+
+```julia
+begin
+    for p in poly
+        nmax = maximum([maximum(p[k]) for k in names(p)])
+        plt = plot()
+        for nuc in names(p)
+            histogram!(p,nuc,
+                       xaxis=("Poly-X length"),
+                       yaxis=("Number of reads with Poly-X of that length",
+                              :log10,(1,Inf)),
+                       bins=collect((0:nmax)))
+
+        end
+        display(plt)
+    end
+end
+```
