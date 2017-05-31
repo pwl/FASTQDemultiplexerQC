@@ -1,5 +1,6 @@
 module FASTQDemultiplexerQC
 
+include("utils.jl")
 
 import FASTQDemultiplexer: Output, Protocol, Barcode, InterpretedRecord,
     mergeoutput
@@ -7,7 +8,7 @@ using DataFrames
 using Weave
 
 
-type OutputQC{N} <: Output
+type OutputQC{N,C,U} <: Output
     results::DataFrame
     poly::NTuple{N,DataFrame}
     nreads::Float64
@@ -15,11 +16,12 @@ type OutputQC{N} <: Output
 end
 
 
-function OutputQC{N}(protocol::Protocol{N};
-                     outputdir::String = ".",
-                     maxreads = Inf,
-                     countpoly::Bool = true,
-                     kwargs...)
+function OutputQC{N,C,U}(protocol::Protocol{N,C,U};
+                         outputdir::String = ".",
+                         maxreads = Inf,
+                         countpoly::Bool = true,
+                         hamming::Bool = true,
+                         kwargs...)
 
     results = DataFrame(cellid = UInt[],
                         umiid = UInt[],
@@ -27,7 +29,7 @@ function OutputQC{N}(protocol::Protocol{N};
     poly = [
         DataFrame(A=UInt8[],C=UInt8[],T=UInt8[],G=UInt8[])
         for i in 1:N ]
-    return OutputQC(results,(poly...),Float64(maxreads),countpoly)
+    return OutputQC{N,C,U}(results,(poly...),Float64(maxreads),countpoly)
 end
 
 
@@ -52,46 +54,40 @@ function Base.write{N}(o::OutputQC{N},ir::InterpretedRecord{N})
 end
 
 
-function mergeoutput{N}(outputs::Vector{OutputQC{N}};
-                        outputdir::String = ".",
-                        kwargs...)
-    if length(outputs) > 1
+function mergeoutput{N,C,U}(outputs::Vector{OutputQC{N,C,U}};
+                            outputdir::String = ".",
+                            hamming::Bool = false,
+                            kwargs...)
+    @time if length(outputs) > 1
         results = vcat((o.results for o in outputs)...)
         poly = map(1:N) do i
             vcat((o.poly[i] for o in outputs)...)
         end
     else
-        results = outputs[1].results
-        poly = outputs[1].poly
+        results = first(outputs).results
+        poly = first(outputs).poly
     end
 
     mkpath(outputdir)
 
-    report(results,poly,outputdir)
+    report(results,poly,outputdir,hamming,C)
 end
 
-function report(results, poly, outputdir)
+function report(results,poly,outputdir,hamming,celllen)
 
     args = Dict(:results=>results,
                 :poly=>poly)
 
+    @time if hamming
+        cellids = unique(results[:cellid])
+        distances = getminhammingdistance(cellids,celllen)
+        args[:distances] =
+            DataFrame(cellid=cellids,
+                      mindistance=distances)
+    end
+
     weave(Pkg.dir("FASTQDemultiplexerQC","src","weave","QC.jmd"),
           args = args, out_path = outputdir)
-end
-
-
-function longeststreak(seq::Vector{UInt8},nuc::UInt8)
-    len=0
-    current=0
-    for a in seq
-        if a==nuc
-            len=max(len,current)
-            current+=1
-        else
-            current=0
-        end
-    end
-    return len
 end
 
 end # module

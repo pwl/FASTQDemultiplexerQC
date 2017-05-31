@@ -15,21 +15,36 @@ results = WEAVE_ARGS[:results]
 poly = WEAVE_ARGS[:poly]
 ```
 
-#### Number of reads ####
+#### Poly-tail statistics ####
 
 ```julia
 begin
     for p in poly
-        nmax = maximum([maximum(p[k]) for k in names(p)])
-        plt = plot()
-        for nuc in names(p)
-            histogram!(p,nuc,
-                       xaxis=("Poly-X length"),
-                       yaxis=("Number of reads with Poly-X of that length",
-                              :log10,(1,Inf)),
-                       bins=collect((0:nmax)))
+        if size(p,1) > 0
+            nmax = maximum([maximum(p[k]) for k in names(p)])
+            plt = plot()
+            for nuc in names(p)
+                histogram!(p,nuc,
+                           xaxis=("Poly-X length"),
+                           yaxis=("Number of reads with Poly-X of that length",
+                                  :log10,(1,Inf)),
+                           label=string(nuc),
+                           bins=collect((0:nmax)))
 
+            end
+            display(plt)
         end
+    end
+end
+```
+
+#### Hammond distances ####
+```julia
+begin
+    if haskey(WEAVE_ARGS,:distances)
+        distances = WEAVE_ARGS[:distances]
+        nmax = maximum(distances[:mindistance])
+        plt = histogram(distances,:mindistance,bins=collect((1:nmax)))
         display(plt)
     end
 end
