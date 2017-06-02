@@ -37,15 +37,3 @@ begin
     end
 end
 ```
-
-#### Hammond distances ####
-```julia
-begin
-    if haskey(WEAVE_ARGS,:distances)
-        distances = WEAVE_ARGS[:distances]
-        nmax = maximum(distances[:mindistance])
-        plt = histogram(distances,:mindistance,bins=collect((1:nmax)))
-        display(plt)
-    end
-end
-```
