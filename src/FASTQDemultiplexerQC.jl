@@ -23,8 +23,8 @@ function OutputQC{N,C,U}(protocol::Protocol{N,C,U};
                          hamming::Bool = true,
                          kwargs...)
 
-    results = DataFrame(cellid = UInt[],
-                        umiid = UInt[],
+    results = DataFrame(cellid = Array{UInt}(0),
+                        umiid = Array{UInt}(0),
                         groupname = PooledDataArray(String,UInt8,0))
     poly = [
         DataFrame(A=UInt8[],C=UInt8[],T=UInt8[],G=UInt8[])
@@ -86,7 +86,7 @@ function report(results,poly,outputdir,hamming,celllen)
                       mindistance=distances)
     end
 
-    weave(Pkg.dir("FASTQDemultiplexerQC","src","weave","QC.jmd"),
+    weave(joinpath(@__DIR__,"weave","QC.jmd"),
           args = args, out_path = outputdir)
 end
 
