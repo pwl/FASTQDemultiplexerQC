@@ -2,15 +2,21 @@
 function longeststreak(seq::Vector{UInt8},nuc::UInt8)
     len=0
     current=0
-    for a in seq
-        if a==nuc
-            len=max(len,current)
+    last=0
+    count=0
+    for i in linearindices(seq)
+        if seq[i]==nuc
+            count+=1
             current+=1
+            if current > len
+                len = current
+                last = i
+            end
         else
             current=0
         end
     end
-    return len
+    return len, last, count
 end
 
 # Compute a Hamming distance between `id1` and `id2`, assuming that

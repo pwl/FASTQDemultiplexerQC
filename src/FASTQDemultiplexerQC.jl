@@ -1,35 +1,41 @@
 module FASTQDemultiplexerQC
 
-include("utils.jl")
-
-import FASTQDemultiplexer: Output, Protocol, Barcode, InterpretedRecord,
-    mergeoutput
+import FASTQDemultiplexer:
+    Output, Protocol, Barcode, Barcodes, InterpretedRecord,
+    mergeoutput, cellidtoname, idtoname, umiid, cellid
 using DataFrames
 using Weave
+using DataStructures
 
+include("utils.jl")
+include("polycounter.jl")
 
-type OutputQC{N,C,U} <: Output
+# TODO: why does it have to be mutable?
+mutable struct OutputQC{N,C,U} <: Output
     results::DataFrame
-    poly::NTuple{N,DataFrame}
+    poly::Vector{PolyCounter}
     nreads::Float64
     countpoly::Bool
+    protocol::Protocol{N,C,U}
 end
 
 
-function OutputQC{N,C,U}(protocol::Protocol{N,C,U};
+function OutputQC{N,C,U}(protocol::Protocol{N,C,U},
+                         barcodes::Barcodes;
                          outputdir::String = ".",
                          maxreads = Inf,
                          countpoly::Bool = true,
                          hamming::Bool = true,
+                         polyspecs=[('A',1),('T',1)],
                          kwargs...)
 
-    results = DataFrame(cellid = Array{UInt}(0),
-                        umiid = Array{UInt}(0),
-                        groupname = PooledDataArray(String,UInt8,0))
-    poly = [
-        DataFrame(A=UInt8[],C=UInt8[],T=UInt8[],G=UInt8[])
-        for i in 1:N ]
-    return OutputQC{N,C,U}(results,(poly...),Float64(maxreads),countpoly)
+    results = DataFrame(cellid = UInt[],
+                        umiid = UInt[],
+                        groupid = Int8[])
+    poly = map(polyspecs) do specs
+        PolyCounter(specs...,C)
+    end
+    return OutputQC{N,C,U}(results,poly,Float64(maxreads),countpoly,protocol)
 end
 
 
@@ -41,14 +47,11 @@ function Base.write{N}(o::OutputQC{N},ir::InterpretedRecord{N})
         o.nreads-=1
     end
 
-    push!(o.results,(ir.cellid.val,ir.umiid.val,ir.groupname))
-    if o.countpoly
-        for i = 1:N
-            seq = ir.records[i].data[ir.records[i].sequence]
-            push!(o.poly[i],
-                  map(UInt8['A','C','T','G']) do nuc
-                  longeststreak(seq,nuc)
-                  end)
+    push!(o.results,(cellid(ir),umiid(ir),ir.groupid))
+
+    if o.countpoly && ir.groupid > -1
+        for p in o.poly
+            push!(p,ir)
         end
     end
 end
@@ -57,11 +60,15 @@ end
 function mergeoutput{N,C,U}(outputs::Vector{OutputQC{N,C,U}};
                             outputdir::String = ".",
                             hamming::Bool = false,
+                            writestats::Bool = true,
+                            writereport::Bool = true,
                             kwargs...)
-    @time if length(outputs) > 1
+    protocol = outputs[1].protocol
+    if length(outputs) > 1
         results = vcat((o.results for o in outputs)...)
-        poly = map(1:N) do i
-            vcat((o.poly[i] for o in outputs)...)
+
+        poly = map(zip((o.poly for o in outputs)...)) do p
+            merge(p...)
         end
     else
         results = first(outputs).results
@@ -70,15 +77,24 @@ function mergeoutput{N,C,U}(outputs::Vector{OutputQC{N,C,U}};
 
     mkpath(outputdir)
 
-    report(results,poly,outputdir,hamming,C)
+    if writestats
+        for p in poly
+            write(outputdir,p)
+        end
+    end
+
+    if writereport
+        report(results,poly,outputdir,hamming,C,protocol.readnames)
+    end
 end
 
-function report(results,poly,outputdir,hamming,celllen)
+function report(results,poly,outputdir,hamming,celllen,readnames)
 
     args = Dict(:results=>results,
-                :poly=>poly)
+                :poly=>poly,
+                :readnames=>readnames)
 
-    @time if hamming
+    if hamming
         cellids = unique(results[:cellid])
         distances = getminhammingdistance(cellids,celllen)
         args[:distances] =
